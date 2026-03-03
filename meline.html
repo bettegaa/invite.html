@@ -69,13 +69,21 @@
   .gold-dot{position:absolute;border-radius:50%;background:var(--gold);animation:twinkle 2s ease-in-out infinite}
   @keyframes twinkle{0%,100%{opacity:.2;transform:scale(1)}50%{opacity:.8;transform:scale(1.5)}}
 </style>
+<script src="https://www.youtube.com/iframe_api"></script>
 </head>
 <body>
 <canvas id="particles"></canvas>
+<div id="ytBg" style="position:fixed;width:0;height:0;opacity:0;pointer-events:none;overflow:hidden"></div>
+<audio id="bgMusic" loop preload="auto">
+  <source src="assets/Rather%20Be.mp3" type="audio/mpeg">
+</audio>
+<audio id="clickSfx" preload="auto">
+  <source src="https://assets.mixkit.co/active_storage/sfx/1435/1435-preview.mp3" type="audio/mpeg">
+</audio>
 
 <div id="envelope-screen">
   <p class="env-label">Você recebeu um convite especial <i class="fa-solid fa-star"></i></p>
-  <div class="envelope-wrap" onclick="openEnvelope()">
+  <div class="envelope-wrap" onpointerdown="primeMusicStart()" onclick="openEnvelope()">
     <div class="env-body"></div>
     <div class="env-card-peek" id="cardPeek"><span class="peek-text">Meline &bull; 15 Anos</span></div>
     <div class="env-flap" id="envFlap"></div>
@@ -123,7 +131,7 @@
       <div class="info-box">
         <span class="info-icon"><i class="fa-regular fa-calendar"></i></span>
         <span class="info-label">Data</span>
-        <span class="info-value"><strong>28 de Março</strong><br>de 2025</span>
+        <span class="info-value"><strong>28 de Março</strong><br>de 2026</span>
       </div>
       <div class="info-box">
         <span class="info-icon"><i class="fa-regular fa-clock"></i></span>
@@ -141,20 +149,101 @@
 
     <div class="card-footer">
       <p class="footer-quote">Uma noite de sonhos e flores...</p>
-      <p class="footer-year"><i class="fa-solid fa-star"></i> 2025 <i class="fa-solid fa-star"></i></p>
+      <p class="footer-year"><i class="fa-solid fa-star"></i> 2026 <i class="fa-solid fa-star"></i></p>
     </div>
   </div>
 </div>
 
 <script>
 const canvas=document.getElementById('particles'),ctx=canvas.getContext('2d');
+const ytBg=document.getElementById('ytBg');
+const ytVideoId='mCKwrAgwe4k';
+const bgMusic=document.getElementById('bgMusic');
+const clickSfx=document.getElementById('clickSfx');
+let ytPlayer=null;
+let ytReady=false;
+let bgFadeTimer=null;
+let musicPrimed=false;
 canvas.width=window.innerWidth;canvas.height=window.innerHeight;
 window.addEventListener('resize',()=>{canvas.width=window.innerWidth;canvas.height=window.innerHeight});
 const dots=Array.from({length:80},()=>({x:Math.random()*canvas.width,y:Math.random()*canvas.height,r:Math.random()*2.5+.5,speed:Math.random()*.4+.1,opacity:Math.random(),opDir:Math.random()>.5?1:-1,color:Math.random()>.5?'#d4af5a':'#e8277a'}));
 function animateParticles(){ctx.clearRect(0,0,canvas.width,canvas.height);dots.forEach(d=>{d.y-=d.speed;d.opacity+=d.opDir*.008;if(d.opacity>1)d.opDir=-1;if(d.opacity<0)d.opDir=1;if(d.y<-10){d.y=canvas.height+10;d.x=Math.random()*canvas.width}ctx.beginPath();ctx.arc(d.x,d.y,d.r,0,Math.PI*2);ctx.fillStyle=d.color;ctx.globalAlpha=d.opacity*.7;ctx.fill()});ctx.globalAlpha=1;requestAnimationFrame(animateParticles)}
 animateParticles();
+function startBackgroundMusic(restart=false){
+  if(!bgMusic)return Promise.resolve(false);
+  if(bgFadeTimer){clearInterval(bgFadeTimer);bgFadeTimer=null;}
+  let playAttempt=Promise.resolve(true);
+  if(restart||bgMusic.paused){
+    bgMusic.currentTime=0;
+    bgMusic.volume=.08;
+    const p=bgMusic.play();
+    if(p&&typeof p.then==='function')playAttempt=p.then(()=>true).catch(()=>false);
+  }
+  const targetVolume=.30;
+  bgFadeTimer=setInterval(()=>{
+    bgMusic.volume=Math.min(targetVolume,bgMusic.volume+.012);
+    if(bgMusic.volume>=targetVolume){clearInterval(bgFadeTimer);bgFadeTimer=null;}
+  },180);
+  return playAttempt;
+}
+function startYoutubeBackground(){
+  if(!ytReady||!ytPlayer)return false;
+  ytPlayer.seekTo(0,true);
+  ytPlayer.setVolume(30);
+  ytPlayer.unMute();
+  ytPlayer.playVideo();
+  return true;
+}
+function primeMusicStart(){
+  if(musicPrimed)return;
+  musicPrimed=true;
+  startBackgroundMusic(true).then(started=>{
+    if(started)return;
+    if(!startYoutubeBackground()){
+      setTimeout(()=>{startYoutubeBackground();},900);
+    }
+  });
+}
+window.onYouTubeIframeAPIReady=function(){
+  if(!ytBg||!window.YT||!window.YT.Player)return;
+  ytPlayer=new YT.Player('ytBg',{
+    width:'1',
+    height:'1',
+    videoId:ytVideoId,
+    playerVars:{autoplay:0,controls:0,disablekb:1,rel:0,modestbranding:1,loop:1,playlist:ytVideoId},
+    events:{onReady:()=>{ytReady=true;}}
+  });
+};
+function playFallbackChime(){
+  const AudioCtx=window.AudioContext||window.webkitAudioContext;
+  if(!AudioCtx)return;
+  const audioCtx=new AudioCtx();
+  const now=audioCtx.currentTime;
+  const notes=[880,1174,1318];
+  notes.forEach((freq,index)=>{
+    const osc=audioCtx.createOscillator();
+    const gain=audioCtx.createGain();
+    osc.type='sine';
+    osc.frequency.value=freq;
+    gain.gain.setValueAtTime(0,now+index*.06);
+    gain.gain.linearRampToValueAtTime(.12,now+.01+index*.06);
+    gain.gain.exponentialRampToValueAtTime(.001,now+.28+index*.06);
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.start(now+index*.06);
+    osc.stop(now+.3+index*.06);
+  });
+  setTimeout(()=>audioCtx.close(),650);
+}
+function playEnvelopeSfx(){
+  if(!clickSfx){playFallbackChime();return;}
+  clickSfx.currentTime=0;
+  clickSfx.volume=.85;
+  const p=clickSfx.play();
+  if(p&&typeof p.catch==='function')p.catch(()=>playFallbackChime());
+}
 let opened=false;
-function openEnvelope(){if(opened)return;opened=true;document.getElementById('envSeal').style.opacity='0';document.getElementById('envFlap').classList.add('open');setTimeout(()=>document.getElementById('cardPeek').classList.add('show'),600);setTimeout(()=>{const env=document.getElementById('envelope-screen');env.style.transition='opacity .8s';env.style.opacity='0';setTimeout(()=>{env.style.display='none';document.getElementById('card-screen').classList.add('show')},800)},1800)}
+function openEnvelope(){if(opened)return;opened=true;primeMusicStart();playEnvelopeSfx();document.getElementById('envSeal').style.opacity='0';document.getElementById('envFlap').classList.add('open');setTimeout(()=>document.getElementById('cardPeek').classList.add('show'),600);setTimeout(()=>{const env=document.getElementById('envelope-screen');env.style.transition='opacity .8s';env.style.opacity='0';setTimeout(()=>{env.style.display='none';document.getElementById('card-screen').classList.add('show')},800)},1800)}
 </script>
 </body>
 </html>
